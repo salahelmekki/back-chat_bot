@@ -1,47 +1,69 @@
-# main.py (FastAPI backend)
-from fastapi import FastAPI, Form, HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from openai import OpenAI
-from typing import List
+import nltk
+from nltk.tokenize import word_tokenize
+from nltk.corpus import stopwords
+from nltk.stem import PorterStemmer
+import openai
 
 app = FastAPI()
 
-# CORS middleware for allowing requests from the frontend
+# CORS middleware to allow requests from any origin
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # adjust accordingly in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# OpenAI API key (replace 'YOUR_OPENAI_API_KEY' with your actual API key)
-client = OpenAI(api_key='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')
+# Set your OpenAI API key
+openai.api_key = "YOUR_OPENAI_API_KEY"
 
-class UserMessage(BaseModel):
-    content: str
-    role: str
+# NLTK setup
+nltk.download('punkt')
+nltk.download('stopwords')
+stop_words = set(stopwords.words('english'))
+porter = PorterStemmer()
 
+
+# Model for request payload
+class RequestPayload(BaseModel):
+    messages: list
+
+
+# Route to handle the OpenAI API request
 @app.post("/openai")
-async def chat_endpoint(messages: List[UserMessage]):
-    try:
-        # Prepare messages for the Chat API
-        chat_messages = [{"role": msg.role, "content": msg.content} for msg in messages]
+async def openai_request(request_payload: RequestPayload):
+    user_message = request_payload.messages[0]['content']
 
-        # Make a request to OpenAI Chat API
-        response = client.Chat.completions.create(
-            model="gpt-3.5-turbo",
-            response_format={"type": "json_object"},
-            messages=chat_messages
-        )
+    # Extract keywords using NLTK
+    keywords = extract_keywords(user_message)
 
-        # Extract the assistant's reply from the response
-        assistant_reply = response['choices'][0]['message']['content']
+    # Call OpenAI API to get a response
+    openai_response = call_openai_api(user_message)
 
-        return {"assistant_reply": assistant_reply}
+    # Combine NLTK and OpenAI responses
+    combined_response = f"NLTK Keywords: {keywords}\n\nOpenAI Response: {openai_response}"
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing request: {e}")
+    return {"assistant_reply": combined_response}
 
 
+# NLTK function to extract keywords
+def extract_keywords(question):
+    words = word_tokenize(question)
+    keywords = [porter.stem(word) for word in words if word.lower() not in stop_words]
+    return keywords
+
+
+# Dummy function to simulate OpenAI API call
+def call_openai_api(question):
+    response = openai.Completion.create(
+        model="gpt-3.5-turbo",  # Adjust the model as needed
+        prompt=question,
+        temperature=0.7,
+        max_tokens=150,
+        stop=None
+    )
+    return response.choices[0].text.strip()
